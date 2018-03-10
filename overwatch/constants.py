@@ -1,3 +1,7 @@
+platforms = ("pc", "xbl", "psn")
+
+modes = ('quickplay', 'competitive')
+
 heroes = {
     'all': '0x02E00000FFFFFFFF', 'reaper': '0x02E0000000000002',
     'tracer': '0x02E0000000000003', 'mercy': '0x02E0000000000004',
@@ -13,4 +17,24 @@ heroes = {
     'sombra': '0x02E000000000012E', 'doomfist': '0x02E000000000012F',
     'ana': '0x02E000000000013B', 'orisa': '0x02E000000000013E',
     'moira': '0x02E00000000001A2'
+}
+
+comparisons = {
+    'Time Played' : '0x0860000000000021', 
+    'Games Won' : '0x0860000000000039', 
+    'Win Percentage' : '0x08600000000003D1',
+    'Weapon Accuracy': '0x086000000000002F',
+    'Eliminations per Life' : '0x08600000000003D2',
+    'Multikill - Best' : '0x0860000000000346', 
+    'Objective Kills - Average' : '0x086000000000039C'
+}
+
+achievementTypes = {
+    "General" : '0',
+    "Offense" : '1',
+    "Defense" : '2',
+    "Tank" : '3',
+    "Support" : '4',
+    "Maps" : '5',
+    "Special" : '6',
 }

@@ -1,6 +1,6 @@
-class InvalidFilter(Exception):
+class InvalidStat(Exception):
     """
-    Raise when 'filter' key word argument is not recognized
+    Raise when 'stat' key word argument is not recognized
     """
     pass
 
@@ -26,9 +26,21 @@ class InvalidBattletag(Exception):
     """
     pass
 
+class InvalidArgument(Exception):
+    """
+    Raise when a provider argument does not belong the list of expected values 
+    """
+    pass
+
 
 class NotFound(Exception):
     """
     Raise when stats could not be found
+    """
+    pass
+
+class UnexpectedBehaviour(Exception):
+    """
+    Raise when we identify unexpected behaviour is found. This usually signals a bug.
     """
     pass
