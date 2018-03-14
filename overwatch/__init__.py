@@ -2,9 +2,9 @@ import urllib
 
 from requests_html import HTMLSession
 
-from .constants import (platforms, heroes, modes, comparisons, achievementTypes)
+from .constants import (platforms, modes)
 from .errors import (InvalidBattletag, InvalidCombination, InvalidStat,
-                    InvalidHero, NotFound, InvalidArgument)
+                    InvalidHero, NotFound, InvalidArgument, UnexpectedBehaviour)
 
 session = HTMLSession()
 
@@ -25,11 +25,9 @@ class Overwatch:
         else:
             self._battletag = urllib.parse.quote(battletag)
         self._platform = platform
-        self._comparisons = []
-        self._stats = []
-        furl = self.url + platform + '/' + self._battletag
-        print (furl)
-        self._r = session.get(furl)
+        self._model = {}
+        self._r = session.get(self.url + platform + '/' + self._battletag)
+        self.parse_page()
 
     '''
     Public methods to get a players available stats
@@ -40,24 +38,23 @@ class Overwatch:
         Show the different statistics by comparing them across all characters
         '''
         self._mode = self.get_mode(mode)
-        tag = constants.comparisons[stat]
+        tag = self._comparisons[stat]
         time = self.getHtmlForMode().find(f'div[data-category-id="overwatch.guid.{tag}"]')
         if len(time) == 0:
             return []
         time = time[0]
         return time.text.split('\n')
 
-    def get_stats(self, mode='quickplay', hero='all', stat='best'):
+    def get_stats(self, mode='quickplay', hero='all'):
         '''
         Retrieve the different statistics based on the requested hero and the specified stat.
         '''
         self._mode = self.get_mode(mode)
         self._hero = hero.lower()
-        self._stat = stat.title()
         self.error_check()
         return self.generate_stats()
 
-    def achiements(self, mode='quickplay', achivementType='General'):
+    def achiements(self, achivementType='General'):
         '''
         Retrieve a list of available and acquired achivements.
         Currently this function is not implemented.
@@ -77,6 +74,16 @@ class Overwatch:
     '''
     Internal methods
     '''
+    def parse_page(self):
+        for mode in constants.modes:
+            html_mode = self.get_mode(mode)
+            comparisons = self.getDictFromDropdown('comparisons', html_mode)
+            comparisons_stats = self.comparison()
+            heroes = self.getDictFromDropdown('stats', html_mode)
+            model[mode] = {'comparisons' : comparisons_stats}
+        achievements = self.getDictFromDropdown('achievements')
+        self._mode = self.get_mode(mode)
+
     def generate_stats(self):
         html = self.getHtmlForMode().find(f'div[data-category-id="{heroes[self._hero]}"]')
         if len(html) == 0:
@@ -90,6 +97,7 @@ class Overwatch:
     def get_mode(self, mode):
         if mode not in constants.modes:
             raise InvalidArgument(f'mode="{mode}" is invalid')
+
         return (mode)
 
     def error_check(self):
@@ -119,6 +127,20 @@ class Overwatch:
             raise UnexpectedBehaviour('Finding the element for this game mode returned more than 1 element')
         return html[0]
 
+    def getDictFromDropdown(self, selectId, pageSection = None):
+        if pageSection == None:
+            dropdownList = self._r.html.find(f'select[data-group-id="{selectId}"]')
+        else:
+            dropdownList = pageSection.find(f'select[data-group-id="{selectId}"]')
+        if len(dropdownList) != 1:
+            raise UnexpectedBehaviour('Found multiple dropdowns found.')
+        optionList = dropdown.find('option')
+        for option in optionList:
+            text = option.text
+            value = option.attrs['value']
+            self._comparisons[text] = value
+        return self._comparisons
+
     '''
     Properties to know supported parameters.
 
@@ -135,20 +157,13 @@ class Overwatch:
         return list(constants.modes)
 
     @property
+    def comparisons(self, mode):
+        return self._comparisons
+
+    @property
     def heroes(self):
-        return list(constants.heroes.keys())
-
-    @property
-    def stats(self):
-        if len(self._stats) == 0:
-            stats = self._r.html.find(".stat-title")
-            self._stats = list(set((stat.text for stat in stats)))
-        return self._stats
-
-    @property
-    def comparisons(self):
-        return list(constants.comparisons.keys())
+        return self._heroes
 
     @property
     def achievementTypes(self):
-        return list(constants.achievementTypes.keys())
+        return self._achievementTypes
