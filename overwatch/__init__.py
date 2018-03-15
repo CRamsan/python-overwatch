@@ -2,9 +2,10 @@ import urllib
 
 from requests_html import HTMLSession
 
-from .constants import (platforms, modes)
+from .constants import (platforms, modes, ACHIEVEMENTS, COMPARISON, STATS)
 from .errors import (InvalidBattletag, InvalidCombination, InvalidStat,
                     InvalidHero, NotFound, InvalidArgument, UnexpectedBehaviour)
+from overwatch.constants import COMPARISON
 
 session = HTMLSession()
 
@@ -14,132 +15,154 @@ class Overwatch:
     Constructor
     '''
     def __init__(self, battletag=None, platform='pc'):
-        self.url = 'https://playoverwatch.com/en-us/career/'
         if platform == 'pc':
             try:
                 self._battletag = urllib.parse.quote(battletag.replace('#', '-'))
             except AttributeError:
                 raise InvalidBattletag(f'battletag="{battletag}" is invalid')
-        elif platform not in constants.platforms:
+        elif platform not in platforms:
                 raise InvalidArgument(f'platform="{platform}" is invalid')
         else:
             self._battletag = urllib.parse.quote(battletag)
         self._platform = platform
-        self._model = {}
-        self._r = session.get(self.url + platform + '/' + self._battletag)
-        self.parse_page()
-
-    '''
-    Public methods to get a players available stats
-    '''
-
-    def comparison(self, mode='quickplay', stat='Time Played'):
-        '''
-        Show the different statistics by comparing them across all characters
-        '''
-        self._mode = self.get_mode(mode)
-        tag = self._comparisons[stat]
-        time = self.getHtmlForMode().find(f'div[data-category-id="overwatch.guid.{tag}"]')
-        if len(time) == 0:
-            return []
-        time = time[0]
-        return time.text.split('\n')
-
-    def get_stats(self, mode='quickplay', hero='all'):
-        '''
-        Retrieve the different statistics based on the requested hero and the specified stat.
-        '''
-        self._mode = self.get_mode(mode)
-        self._hero = hero.lower()
-        self.error_check()
-        return self.generate_stats()
-
-    def achiements(self, achivementType='General'):
-        '''
-        Retrieve a list of available and acquired achivements.
-        Currently this function is not implemented.
-        '''
-        
-        '''
-        self._mode = self.get_mode(mode)
-        tag = constants.achievementTypes[achivementType]
-        time = self.getHtmlForMode().find(f'div[data-category-id="overwatch.achievementCategory.{tag}"]')
-        if len(time) == 0:
-            return []
-        time = time[0]
-        return time.text.split('\n')
-        '''
-        return []
+        self._model = None
+        self.url = 'https://playoverwatch.com/en-us/career/' + platform + '/' + self._battletag
 
     '''
     Internal methods
     '''
-    def parse_page(self):
-        for mode in constants.modes:
-            html_mode = self.get_mode(mode)
-            comparisons = self.getDictFromDropdown('comparisons', html_mode)
-            comparisons_stats = self.comparison()
-            heroes = self.getDictFromDropdown('stats', html_mode)
-            model[mode] = {'comparisons' : comparisons_stats}
-        achievements = self.getDictFromDropdown('achievements')
-        self._mode = self.get_mode(mode)
-
-    def generate_stats(self):
-        html = self.getHtmlForMode().find(f'div[data-category-id="{heroes[self._hero]}"]')
-        if len(html) == 0:
-            return []
-        hero = html[0]
-        cards = hero.find('.card-stat-block')
-        for card in cards:
-            if card.text.startswith(self._stat):
-                return card.text.split("\n")[1:]
-
-    def get_mode(self, mode):
-        if mode not in constants.modes:
-            raise InvalidArgument(f'mode="{mode}" is invalid')
-
-        return (mode)
-
-    def error_check(self):
-        if self._stat == "Hero Specific" and self._hero == 'all':
-            raise InvalidCombination(f"'{self._stat}' and '{self._hero}'"
-                                     " are not valid stat combinations")
-        if self._stat == "Miscellaneous" and self._hero != 'all':
-            raise InvalidCombination(f"'{self._stat}' and '{self._hero}'"
-                                     " are not valid stat combinations")
-        if self._hero not in constants.heroes.keys():
-            raise InvalidArgument(f'hero="{hero}" is invalid')
-        if self._stat not in self.stats:
-            raise InvalidStat(f'stat="{self._stat}" is invalid.')
-
-    def error_handler(func):
-        def decorator(self, *args):
-            try:
-                results = func(self, *args)
-                return results
-            except KeyError:
-                raise InvalidHero(f'hero="{self._hero}" is invalid.')
-        return decorator
-
-    def getHtmlForMode(self):
-        html = self._r.html.find(f'div[id="{self._mode}"]')
+        
+    def get_html_for_mode(self, mode):
+        html = self._r.html.find(f'div[id="{mode}"]')
         if len(html) != 1:
-            raise UnexpectedBehaviour('Finding the element for this game mode returned more than 1 element')
+            raise UnexpectedBehaviour('Finding the element for this game mode returned o or more than 1 element')
         return html[0]
 
-    def getDictFromDropdown(self, selectId, pageSection = None):
-        if pageSection == None:
-            dropdownList = self._r.html.find(f'select[data-group-id="{selectId}"]')
-        else:
-            dropdownList = pageSection.find(f'select[data-group-id="{selectId}"]')
+    def load_data_if_needed(self):
+        if self._model == None:
+            self._model = {}
+            self._r = session.get(self.url)
+            # We are assuming that OW will not have any other game modes other than competitive and quickplay. 
+            for mode in modes:
+                # now get the html content that belongs to the current game mode
+                html_mode = self.get_html_for_mode(mode)
+                mode_dict = {}
+                
+                # now retrieve the dictionary for all the different comparisons available, they will be something
+                # like 'Games Won', 'Time Played', 'Weapon Accuracy', etc
+                comparison_dict = {}
+                comparisons = self.getDictFromDropdown(COMPARISON, html_mode)
+                for comp_name, comp_value in comparisons.items():
+                    comparison_stats = self.generate_comparison_stats(html_mode, comp_value)
+                    comparison_dict[comp_name] = comparison_stats
+                mode_dict[COMPARISON] = comparison_dict
+                
+                # Now we are going to parse the career stat section
+                hero_stat_dict = {}
+                # Generate the dictionary for the hero stats
+                heroes = self.getDictFromDropdown(STATS, html_mode)
+                # Now generate a dictionary using the hero name as the dictionary key
+                for heroe_name, heroe_value in heroes.items():
+                    hero_stats = self.generate_hero_stats(html_mode, heroe_value)
+                    hero_stat_dict[heroe_name] = hero_stats
+                mode_dict[STATS] = hero_stat_dict
+                
+                self._model[mode] = mode_dict
+            achievements_dict = {}
+            achievements = self.getDictFromDropdown(ACHIEVEMENTS, self._r.html)
+            for achievement_type, achievement_type_value in achievements.items():
+                achievement_dict = self.generate_achievement_list(self._r.html, achievement_type_value)
+                achievements_dict[achievement_type] = achievement_dict
+            self._model[ACHIEVEMENTS] = achievements_dict
+    
+    '''
+    Search the html element for divs containing the comparison stats.
+    The result will be a dictionary that uses a hero as it's key and the stat value as the value
+    '''
+    @staticmethod
+    def generate_comparison_stats(html, comparison_value):
+        comparison_list = html.find(f'div[data-category-id="{comparison_value}"]')
+        if len(comparison_list) == 0:
+            return []
+        if len(comparison_list) != 1:
+            raise UnexpectedBehaviour('Found multiple comparison stats for this value.')
+        stat = comparison_list[0]
+        # stat_data will be in the form of ['dva' , '3' , 'reaper' , '6' , ....] 
+        # We want to convert this into a dictionary
+        stat_data = stat.text.split('\n')
+        stat_dict = {}
+        it = iter(stat_data)
+        for hero_name in it:
+            stat_value = next(it)
+            stat_dict[hero_name] = stat_value
+        return stat_dict
+
+    @staticmethod
+    def generate_hero_stats(html, hero_value):
+        hero_category_list = html.find(f'div[data-category-id="{hero_value}"]')
+        if len(hero_category_list ) == 0:
+            return []
+        if len(hero_category_list ) != 1:
+            raise UnexpectedBehaviour('Found multiple heros for this value.')
+        hero_stats = hero_category_list[0]
+        cards = hero_stats.find('.card-stat-block')
+        # Each card represents the tables for 'Combat', 'Best', 'Average' etc
+        card_dict = {}
+        for card in cards:
+            card_values = card.text.split("\n")
+            card_title = card_values[0]
+            # Each card will have a list of stats inside. Now iterate two at a time
+            # to convert the stats into a dictionary
+            card_content = card_values[1:]
+            stat_dict = {}
+            it = iter(card_content)
+            for stat_name in it:
+                stat_value = next(it)
+                stat_dict[stat_name] = stat_value
+            card_dict[card_title] = stat_dict
+        return card_dict
+
+    '''
+    '''
+    @staticmethod
+    def generate_achievement_list(html, achievement_type_value):
+        achievement_type_list = html.find(f'div[data-category-id="{achievement_type_value}"]')
+        if len(achievement_type_list) == 0:
+            return []
+        if len(achievement_type_list) != 1:
+            raise UnexpectedBehaviour('Found multiple achievement types for this value.')
+        achievement_container = achievement_type_list[0]
+        achievement_list = achievement_container.find('.achievement-card')
+        stat_dict = {}
+        earned_achievement = []
+        missing_achievement = []
+        for achievement in achievement_list:
+            achievement_name = achievement.text
+            if len(achievement.find('.m-disabled')) == 0:
+                earned_achievement.append(achievement_name)
+            else:
+                missing_achievement.append(achievement_name)
+        stat_dict['earned'] = earned_achievement
+        stat_dict['missing'] = missing_achievement
+        return stat_dict
+
+    '''
+    Search for a <select> that matches the selectId. If no pageSection is provided we are going to search the whole page.
+    If we find more than one matching <select> an exception will be thrown. 
+    This method will then search for each <option> and it will return a dictionary that uses their text as the key.
+    '''
+    @staticmethod
+    def getDictFromDropdown(selectId, pageSection):
+        dropdownList = pageSection.find(f'select[data-group-id="{selectId}"]')
         if len(dropdownList) != 1:
             raise UnexpectedBehaviour('Found multiple dropdowns found.')
-        optionList = dropdown.find('option')
+        optionList = dropdownList[0].find('option')
+        optionDict = {}
         for option in optionList:
             text = option.text
             value = option.attrs['value']
-            self._comparisons[text] = value
-        return self._comparisons
+            optionDict[text] = value
+        return optionDict
 
     '''
     Properties to know supported parameters.
@@ -150,20 +173,34 @@ class Overwatch:
 
     @property
     def platforms(self):
-        return list(constants.platforms)
+        self.load_data_if_needed()
+        return list(platforms)
 
     @property
     def modes(self):
-        return list(constants.modes)
+        self.load_data_if_needed()
+        return list(modes)
 
     @property
+    def data(self):
+        self.load_data_if_needed()
+        return self._model
+    
     def comparisons(self, mode):
-        return self._comparisons
+        return self.data[mode][COMPARISON]
 
-    @property
-    def heroes(self):
-        return self._heroes
+    def comparison_types(self, mode):
+        return self.data[mode][COMPARISON].keys()
 
-    @property
-    def achievementTypes(self):
-        return self._achievementTypes
+    def stats(self, mode):
+        return self.data[mode][STATS]
+    
+    def stat_heroes(self, mode):
+        return self.data[mode][STATS].keys()
+    
+    def achievements(self):
+        return self.data[ACHIEVEMENTS]
+
+    def achievement_types(self):
+        return self.data[ACHIEVEMENTS].keys()
+
